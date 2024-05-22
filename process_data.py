@@ -9,217 +9,276 @@ class Data:
         fashion_mnist = tf.keras.datasets.fashion_mnist
         (train_images, train_labels), (val_images, val_labels) = fashion_mnist.load_data()
         
-        this.train_images_original = train_images
-        this.train_labels_original = train_labels
-        this.val_images_original = val_images
-        this.val_labels_original = val_labels
+        # this.train_images_original = train_images
+        # this.train_labels_original = train_labels
+        # this.val_images_original = val_images
+        # this.val_labels_original = val_labels
+        this.all_data_images = np.concatenate((train_images, val_images))
+        this.all_data_labels = np.concatenate((train_labels, val_labels))
         this.original_labels_name = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
                        'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
     
     def remove_class_from_training_data(this, remove_class):
-         #boolean mask to a remove class from training data
+
         this.removed_class = remove_class
-        mask = this.train_labels_original != remove_class
-        
-        this.train_x = this.train_images_original[mask]
-        this.train_y = this.train_labels_original[mask]
-        
         #keep class array
-        mask = this.train_labels_original == remove_class
-        removed_images = this.train_images_original[mask]
-        removed_labels = this.train_labels_original[mask]
+        mask_keep = this.all_data_labels == remove_class
+        this.removed_images = this.all_data_images[mask_keep]
+        this.removed_labels = this.all_data_labels[mask_keep]
+      
+        mask_remove = this.all_data_labels != remove_class
+        this.all_data_images = this.all_data_images[mask_remove]
+        this.all_data_labels = this.all_data_labels[mask_remove]
+
         
-        ## repeat for validation set (used to verify base learner) 
         
-        # boolean mask to remove class 2 from validation data
-        mask = this.val_labels_original != remove_class
-        this.val_x = this.val_images_original[mask]
-        this.val_y = this.val_labels_original[mask]
-        
-        #keep class array
-        mask = this.val_labels_original == remove_class
-        
-        val_removed_images = this.val_images_original[mask]
-        val_removed_labels = this.val_labels_original[mask]
-        
-        # store all removed images and labels in the same arrays
-        this.removed_class_images = np.concatenate([removed_images, val_removed_images])
-        this.removed_class_labels = np.concatenate([removed_labels, val_removed_labels])
-        
-    def simulation_split(this, test_size):
+    def generate_drift_simulation(this, simulation_size):
         # Split the original training data into training and test datasets for simulation
-        train_images, test_images, train_labels, test_labels = train_test_split(this.train_x, this.train_y, test_size=test_size, random_state=42)
-        this.train_x_split = train_images
-        this.train_y_split = train_labels
-        this.test_x_split = test_images
-        this.test_y_split = test_labels
+        train_images, simulation_images, train_labels, simulation_labels = train_test_split(this.all_data_images, this.all_data_labels, 
+                                                                                            test_size=simulation_size, random_state=42)
+        p_test_val = 0.1
+        train_set_length = len(train_images)
+        n_test_val = int(train_set_length*p_test_val)
+        train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=n_test_val, random_state=42)
+        
+        train_images, test_images, train_labels, test_labels = train_test_split(train_images, train_labels, test_size=n_test_val, random_state=42)
+
+        this.train_images = train_images
+        this.train_labels = train_labels
+        this.test_images = test_images
+        this.test_labels = test_labels
+        this.val_images = val_images
+        this.val_labels = val_labels
+        this.simulation_images = simulation_images
+        this.simulation_labels = simulation_labels
         
     def preprocess_class_names(this):
         clothes = [0,1,2,3,4,6]
         shoes = [5,7,9]
         acc = [8]
         this.new_class_names = ["Clothes", "Shoes", "Accessories"]
-        
-        this.train_y_super = np.copy(this.train_y_split)
-        # change labels in training set to new super class
-        clothes_mask = np.isin(this.train_y_split, clothes)
-        this.train_y_super[clothes_mask] = 0
-        shoes_mask = np.isin(this.train_y_split, shoes)
-        this.train_y_super[shoes_mask] = 1
-        acc_mask = np.isin(this.train_y_split, acc)
-        this.train_y_super[acc_mask] = 2
-        
-        #  change labels in validation set 
-        this.val_y_super = np.copy(this.val_y)
-        clothes_mask = np.isin(this.val_y, clothes)
-        this.val_y_super[clothes_mask] = 0
-        shoes_mask = np.isin(this.val_y, shoes)
-        this.val_y_super[shoes_mask] = 1
-        acc_mask = np.isin(this.val_y, acc)
-        this.val_y_super[acc_mask] = 2
+        train_labels_super = np.copy(this.train_labels)
+        test_labels_super = np.copy(this.test_labels)
+        val_labels_super = np.copy(this.val_labels)
+        simulation_labels_super = np.copy(this.simulation_labels)
+        super_labels_list = [(this.train_labels, train_labels_super),
+                             (this.test_labels, test_labels_super), 
+                             (this.val_labels, val_labels_super),
+                             (this.simulation_labels, simulation_labels_super)
+                            ]
+        for original_labels, super_labels in super_labels_list: 
+            # change labels in training set to new super class
+            clothes_mask = np.isin(original_labels, clothes)
+            super_labels[clothes_mask] = 0
+            shoes_mask = np.isin(original_labels, shoes)
+            super_labels[shoes_mask] = 1
+            acc_mask = np.isin(original_labels, acc)
+            super_labels[acc_mask] = 2
 
-        #  change labels in the test set
-        this.test_y_super = np.copy(this.test_y_split)
-        clothes_mask = np.isin(this.test_y_split, clothes)
-        this.test_y_super[clothes_mask] = 0
-        shoes_mask = np.isin(this.test_y_split, shoes)
-        this.test_y_super[shoes_mask] = 1
-        acc_mask = np.isin(this.test_y_split, acc)
-        this.test_y_super[acc_mask] = 2
-
-        this.removed_class_labels_super = np.copy(this.removed_class_labels)
+        this.train_labels_super = super_labels_list[0][1]
+        this.test_labels_super = super_labels_list[1][1]
+        this.val_labels_super = super_labels_list[2][1]
+        this.simulation_labels_super = super_labels_list[3][1]
+        
+        this.removed_labels_super = np.copy(this.removed_labels)
         # also change the removed class to the new superclass 
         if this.removed_class in clothes: 
-            this.removed_class_labels_super[:] = 0
+            this.removed_labels_super[:] = 0
         elif this.removed_class in shoes: 
-            this.removed_class_labels_super[:] = 1
+            this.removed_labels_super[:] = 1
         elif this.removed_class in acc: 
-            this.removed_class_labels_super[:] = 2
+            this.removed_labels_super[:] = 2
+
+        print(this.removed_labels_super.shape)
 
     def preprocess(this):
         clothes = [0,1,2,3,4,6]
         shoes = [5,7,9]
         acc = [8]
         # reshape data to single channel
-        this.train_x_split = this.train_x_split.reshape((this.train_x_split.shape[0], 28, 28, 1))
-        this.val_x = this.val_x.reshape((this.val_x.shape[0], 28, 28, 1))
-        this.test_x_split = this.test_x_split.reshape((this.test_x_split.shape[0], 28, 28, 1))
-        this.removed_class_images = this.removed_class_images.reshape((this.removed_class_images.shape[0], 28, 28, 1))
+        this.train_images = this.train_images.reshape((this.train_images.shape[0], 28, 28, 1))
+        this.test_images = this.test_images.reshape((this.test_images.shape[0], 28, 28, 1))
+        this.val_images = this.val_images.reshape((this.val_images.shape[0], 28, 28, 1))
+        this.simulation_images = this.simulation_images.reshape((this.simulation_images.shape[0], 28, 28, 1))
+        this.removed_images = this.removed_images.reshape((this.removed_images.shape[0], 28, 28, 1))
         
         # one hot encode target vals
-        this.train_y_super = to_categorical(this.train_y_super)
-        this.val_y_super = to_categorical(this.val_y_super)
-        this.test_y_super = to_categorical(this.test_y_super)
+        this.train_labels_super = to_categorical(this.train_labels_super)
+        this.test_labels_super = to_categorical(this.test_labels_super)
+        this.val_labels_super = to_categorical(this.val_labels_super)
+        this.simulation_labels_super = to_categorical(this.simulation_labels_super)
         
         # "one hot encode" removed class - need to add the rest of the of the labels to the array
         # to have the same format as the training labels for example [0 0 1]
-        one_hot_removed = np.zeros((len(this.removed_class_labels_super),3))
-        one_hot_removed[np.arange(len(this.removed_class_labels_super)), this.removed_class_labels_super] = 1
-        this.removed_class_labels_super = one_hot_removed
+        one_hot_removed = np.zeros((len(this.removed_labels_super),3))
+        one_hot_removed[np.arange(len(this.removed_labels_super)), this.removed_labels_super] = 1
+        this.removed_labels_super = one_hot_removed
 
 
 
         # normalize pixel data
         # convert from integers to floats
-        this.train_x_split = this.train_x_split.astype('float32')
-        this.val_x = this.val_x.astype('float32')
-        this.removed_class_images = this.removed_class_images.astype('float32')
-        this.test_x_split = this.test_x_split.astype('float32')
+        this.train_images = this.train_images.astype('float32')
+        this.test_images = this.test_images.astype('float32')
+        this.val_images = this.val_images.astype('float32')
+        this.removed_images = this.removed_images.astype('float32')
+        this.simulation_images = this.simulation_images.astype('float32')
         # normalize to range 0-1
-        this.train_x_split = this.train_x_split / 255.0
-        this.val_x = this.val_x / 255.0
-        this.test_x_split = this.test_x_split / 255.0
-        this.removed_class_images = this.removed_class_images/ 255.0
+        this.train_images = this.train_images / 255.0
+        this.test_images = this.test_images / 255.0
+        this.val_images = this.val_images / 255.0
+        this.simulation_images = this.simulation_images / 255.0
+        this.removed_images = this.removed_images/ 255.0
 
+    def shuffle_data(this, images, labels, superlabels):
+        shuffle_indices =  np.random.permutation(len(images))
+        shuffled_images = images[shuffle_indices]
+        shuffled_labels = labels[shuffle_indices]
+        shuffled_labels_super = superlabels[shuffle_indices]
+        return shuffled_images, shuffled_labels,shuffled_labels_super
 
+    def split_data(this,start, end, images, labels, superlabels):
+        
+        split_images = images[start:end]
+        split_labels = labels[start:end]
+        split_superlabels = superlabels[start:end]
+        return split_images, split_labels, split_superlabels
+
+    def merge_data(this, images_1, images_2, labels_1, labels_2, superlabels_1, superlabels_2):
+        merged_images = np.concatenate((images_1, images_2))
+        merged_labels = np.concatenate((labels_1, labels_2))
+        merged_superlabels = np.concatenate((superlabels_1,superlabels_2))
+        return merged_images, merged_labels, merged_superlabels
+        
     def concat_test_data(this):
+        clothes = [0,1,2,3,4,6]
+        shoes = [5,7,9]
+        acc = [8]
         # split images and labels into subsets, doing this we can control when and where to introduce drift
-        test_x_1 = this.test_x_split[:2000]
-        test_y_1 = this.test_y_super[:2000]
-        test_original_y_1 = this.test_y_split[:2000]
-        
-        test_x_2 = this.test_x_split[2000:10000]
-        test_y_2 = this.test_y_super[2000:10000]
-        test_original_y_2 = this.test_y_split[2000:10000]
-        
-        test_x_3 = this.test_x_split[10000:18000]
-        test_y_3 = this.test_y_super[10000:18000]
-        test_original_y_3 = this.test_y_split[10000:18000]
-        
-        test_x_4 = this.test_x_split[18000:]
-        test_y_4 = this.test_y_super[18000:]
-        test_original_y_4 = this.test_y_split[18000:]        
+        simulation_length = len(this.simulation_labels)
+        simulation_length_quarter = int(simulation_length // 4)
 
+        exlusion_set_images, exlusion_set_labels, exlusion_set_labels_super = this.split_data(0, simulation_length_quarter, 
+                                                                                      this.simulation_images,
+                                                                                      this.simulation_labels, this.simulation_labels_super)
 
-        # split removed class images and labels into subsets, so we can introduce multiple drift points
-        removed_x_1 = this.removed_class_images[:3500]
-        removed_y_1 = this.removed_class_labels_super[:3500]
-        removed_original_y_1 = this.removed_class_labels[:3500]
+        include_set_images, include_set_labels, include_set_labels_super = this.split_data(simulation_length_quarter, simulation_length, 
+                                                                                      this.simulation_images,
+                                                                                      this.simulation_labels, this.simulation_labels_super)
+
+        inclusion_set_length = len(include_set_labels_super) 
+        inclusion_set_third = int(inclusion_set_length //3)
+        include_images_1, include_labels_1, include_labels_super_1 = this.split_data(0, simulation_length_quarter, 
+                                                                                      include_set_images,
+                                                                                      include_set_labels, include_set_labels_super)
+
+        include_images_2, include_labels_2, include_labels_super_2 = this.split_data(simulation_length_quarter, simulation_length_quarter*2, 
+                                                                                      include_set_images,
+                                                                                      include_set_labels, include_set_labels_super)
         
-        removed_x_2 = this.removed_class_images[3500:]
-        removed_y_2 = this.removed_class_labels_super[3500:]
-        removed_original_y_2 = this.removed_class_labels[3500:]
+        include_images_3, include_labels_3, include_labels_super_3 = this.split_data(simulation_length_quarter*2, simulation_length_quarter*3, 
+                                                                              include_set_images,
+                                                                              include_set_labels, include_set_labels_super)
+
+        removed_super_class = 0
+        num_category_of_removed = 0
+        if this.removed_class in clothes: 
+            removed_super_class = 0
+        elif this.removed_class in shoes: 
+            removed_super_class = 1
+        elif this.removed_class in acc: 
+            removed_super_class = 2
+
+        print("Removed super class is: ", removed_super_class)
+        # count the number of instances of the super class to which the removed class belongs
+        if removed_super_class == 0: 
+            num_category_of_removed = np.count_nonzero(include_set_labels == 0)
+        elif removed_super_class == 1: 
+            num_category_of_removed = np.count_nonzero(include_set_labels == 1)
+        elif removed_super_class == 2: 
+            num_category_of_removed = np.count_nonzero(include_set_labels == 2)
 
         
-        # reintroduce removed class in two intervalls, with subsets 2 and 4
-        reintroduce_x_1 = np.concatenate((removed_x_1,test_x_2,), axis=0)
-        reintroduce_y_1 = np.concatenate((removed_y_1,test_y_2,), axis=0)
-        reintroduce_y_original_1 = np.concatenate((removed_original_y_1,test_original_y_2,), axis=0)
+        print(num_category_of_removed)
+        # sets increasing drift severiy by increasing the number of removed class in different intervals
+        n_include_removed_1 = int(num_category_of_removed * 0.2 )
+        n_include_removed_2 = int(num_category_of_removed * 0.4 )
+        n_include_removed_3 = int(num_category_of_removed * 0.6 )
 
-        reintroduce_x_2 = np.concatenate((removed_x_2, test_x_4), axis=0)
-        reintroduce_y_2 = np.concatenate((removed_y_2, test_y_4), axis=0)
-        reintroduce_y_original_2 = np.concatenate((removed_original_y_2, test_original_y_4), axis=0)
-        
-        
-        shuffle_indices_1 =  np.random.permutation(len(reintroduce_x_1))
-        
-        # Shuffle the data arrays using the permutation indices
-        shuffled_x_1 = reintroduce_x_1[shuffle_indices_1]
-        shuffled_y_1 = reintroduce_y_1[shuffle_indices_1]
-        shuffled_y_original_1 = reintroduce_y_original_1[shuffle_indices_1]
+        # Insert the removed class into the drift intervals 
+        insert_images, insert_labels, inserts_labels_super = this.split_data(0,n_include_removed_1,
+                                                                       this.removed_images,this.removed_labels, this.removed_labels_super)
 
-                
-        shuffle_indices_2 =  np.random.permutation(len(reintroduce_x_2))
         
-        # Shuffle the data arrays using the permutation indices
-        shuffled_x_2 = reintroduce_x_2[shuffle_indices_2]
-        shuffled_y_2 = reintroduce_y_2[shuffle_indices_2]
-        shuffled_y_original_2 = reintroduce_y_original_2[shuffle_indices_2]
+        print("Insert removed labels to interval", len(insert_images))
         
-        # put all subsets together
-        stream_x = np.concatenate((test_x_1,shuffled_x_1), axis=0)
-        stream_x = np.concatenate((stream_x,test_x_3), axis=0)
-        stream_x = np.concatenate((stream_x, shuffled_x_2), axis=0)
+        print("Before merge removed images into drift interval 1:", include_images_1.shape, include_labels_1.shape, include_labels_super_1.shape)
         
-        stream_y = np.concatenate((test_y_1,shuffled_y_1), axis=0)
-        stream_y = np.concatenate((stream_y,test_y_3), axis=0)
-        stream_y = np.concatenate((stream_y, shuffled_y_2), axis=0)
+        include_images_1, include_labels_1, include_labels_super_1 = this.merge_data(include_images_1, insert_images,
+                                                                                           include_labels_1, insert_labels,
+                                                                                           include_labels_super_1, inserts_labels_super)
 
-                
-        stream_y_original = np.concatenate((test_original_y_1,shuffled_y_original_1), axis=0)
-        stream_y_original = np.concatenate((stream_y_original,test_original_y_3), axis=0)
-        stream_y_original = np.concatenate((stream_y_original, shuffled_y_original_2), axis=0)
-
-        this.stream_x = stream_x
-        this.stream_y = stream_y
-        this.stream_y_original = stream_y_original
-
-         # drift time 1: first occurence of the removed label 
-
-        drift1 = len(test_x_1) + np.where(shuffled_y_original_1 == this.removed_class)[0][0]
-        print(drift1,  np.where(shuffled_y_original_1 == this.removed_class)[0][0])
-        # drift time 2: after the last occurence of removed label in the first drift interval (returning to original distribution would be considered a gradual or recurring drift)
-        drift2 = len(test_x_1)+ max(index for index, item in enumerate(shuffled_y_original_1) if item == this.removed_class)
-        print(drift2)
-        # drift time 3: first occurence in the second drift interval 
-        drift3 = len(test_x_1) + len(shuffled_x_1) + len(test_x_3) + np.where(shuffled_y_original_2 == this.removed_class)[0][0]
-        print(drift3, np.where(shuffled_y_original_2 == this.removed_class)[0][0])
-        # drift time 4: last occurence in the second drift interval
-        drift4 = len(test_x_1) + len(shuffled_x_1) + len(test_x_3)+  max(index for index, item in enumerate(shuffled_y_original_2) if item == this.removed_class)
-        print(drift4)
-        this.drift1 = drift1
-        this.drift2 = drift2
-        this.drift3 = drift3
-        this.drift4 = drift4
         
+        print("after merge removed images into drift interval 1:", include_images_1.shape, include_labels_1.shape, include_labels_super_1.shape)
+        
+        include_images_1, include_labels_1, include_labels_super_1 = this.shuffle_data(include_images_1, include_labels_1, 
+                                                                                                   include_labels_super_1)
+
+        
+        insert_images, insert_labels, insert_labels_super = this.split_data(n_include_removed_1,n_include_removed_2+n_include_removed_1,
+                                                                       this.removed_images,this.removed_labels, this.removed_labels_super)
+        
+        print("Before merge removed images into drift interval 2:", include_images_2.shape, include_labels_2.shape, include_labels_super_2.shape)
+        
+        include_images_2, include_labels_2, include_labels_super_2 = this.merge_data(include_images_2,insert_images,
+                                                                                           include_labels_2, insert_labels,
+                                                                                           include_labels_super_2, insert_labels_super)
+        
+        print("After merge removed images into drift interval 2:", include_images_2.shape, include_labels_2.shape, include_labels_super_2.shape)
+
+        last = n_include_removed_2+n_include_removed_1
+        insert_images, insert_labels, insert_labels_super = this.split_data(last, last+n_include_removed_3,
+                                                                       this.removed_images,this.removed_labels, this.removed_labels_super)
+        print("Before merge removed images into drift interval 2:", include_images_3.shape, include_labels_3.shape, include_labels_super_3.shape)
+        
+        include_images_3, include_labels_3, include_labels_super_3 = this.merge_data(include_images_3,insert_images,
+                                                                                           include_labels_3, insert_labels,
+                                                                                           include_labels_super_3, insert_labels_super)
+        
+        print("After merge removed images into drift interval 2:", include_images_2.shape, include_labels_2.shape, include_labels_super_2.shape)
+        print(f"Added a total of {n_include_removed_1 + n_include_removed_2+n_include_removed_3} from removed class")
+
+        include_images_2, include_labels_2, include_labels_super_2 = this.shuffle_data( include_images_2, include_labels_2, 
+                                                                                                   include_labels_super_2)
+
+        include_images_3, include_labels_3, include_labels_super_3 = this.shuffle_data( include_images_3, include_labels_3, 
+                                                                                                   include_labels_super_3)
+        
+        exlusion_set_images, exlusion_set_labels, exlusion_set_labels_super = this.shuffle_data( exlusion_set_images, exlusion_set_labels, 
+                                                                                                   exlusion_set_labels_super)
+
+        exlude_set_length = len(exlusion_set_labels)
+        exclude_set_midpoint = int(exlude_set_length // 2)
+        
+
+        # Merge the intervals into a simulation set
+        stream_images,stream_labels, stream_labels_super = this.merge_data(exlusion_set_images, include_images_1, exlusion_set_labels, 
+                                                                           include_labels_1, exlusion_set_labels_super, include_labels_super_1)
+
+        
+        stream_images,stream_labels, stream_labels_super = this.merge_data(stream_images, include_images_2, stream_labels, 
+                                                                           include_labels_2, stream_labels_super, include_labels_super_2)
+
+        stream_images,stream_labels, stream_labels_super = this.merge_data(stream_images, include_images_3, stream_labels, 
+                                                                           include_labels_3, stream_labels_super, include_labels_super_3)
+        
+        # Define the drift points by the length of each interval. 
+        this.drift1 = len(exlusion_set_images)
+        this.drift2 = this.drift1+len(include_images_1)
+        this.drift3 = this.drift2+len(include_images_2)
+        this.drift4 = this.drift3+len(include_images_3)
+        print(this.drift1,this.drift2,this.drift3,this.drift4)
+        this.simulation_images, this.simulation_labels, this.simulation_labels_super = stream_images, stream_labels, stream_labels_super
+        print("simulation length after introducing drift: ", len(this.simulation_images))
+
 
